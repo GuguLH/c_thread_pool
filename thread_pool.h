@@ -4,8 +4,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 #include <pthread.h>
 #include <errno.h>
+
+#define OP_NUM 2
 
 // 任务结构体
 typedef struct task
@@ -43,6 +46,8 @@ typedef struct thread_pool
 
 } thread_pool_t;
 
+void *manager(void *arg);
+void *worker(void *arg);
 // 创建线程池并初始化
 extern thread_pool_t *thread_pool_create(const int n_min, const int n_max, const int q_size);
 // 销毁线程池
