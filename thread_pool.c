@@ -60,7 +60,7 @@ void *manager(void *arg)
         {
             pthread_mutex_lock(&pool->mtx_pool);
             pool->die_num = OP_NUM;
-            pthread_mutex_lock(&pool->mtx_pool);
+            pthread_mutex_unlock(&pool->mtx_pool);
 
             // 让工作线程自杀
             int i = 0;
@@ -174,7 +174,7 @@ thread_pool_t *thread_pool_create(const int n_min, const int n_max, const int q_
     }
     for (i = 0; i < pool->min_num; i++)
     {
-        ret = pthread_create(pool->worker_ids[i], NULL, worker, pool);
+        ret = pthread_create(&pool->worker_ids[i], NULL, worker, pool);
         if (ret != 0)
         {
             DEBUG_INFO("[ERROR] pthread_create()\n");
