@@ -1,6 +1,22 @@
 #include "thread_pool.h"
 #include "debug.h"
 
+void thread_exit(thread_pool_t *pool)
+{
+    pthread_t tid = pthread_self();
+    int i = 0;
+    for (i = 0; i < pool->max_num; i++)
+    {
+        if (pool->worker_ids[i] == tid)
+        {
+            pool->worker_ids[i] = 0;
+            DEBUG_INFO("[INFO] Thread [%ld] exiting...\n", tid);
+            break;
+        }
+    }
+    pthread_exit(NULL);
+}
+
 void *manager(void *arg)
 {
     thread_pool_t *pool = (thread_pool_t *)arg;
@@ -71,15 +87,19 @@ void *worker(void *arg)
             if (pool->die_num > 0)
             {
                 pool->die_num--;
-                pthread_mutex_unlock(&pool->mtx_pool);
-                pthread_exit(NULL);
+                if (pool->live_num > pool->min_num)
+                {
+                    pool->live_num--;
+                    pthread_mutex_unlock(&pool->mtx_pool);
+                    thread_exit(pool);
+                }
             }
         }
 
         if (pool->shutdown)
         {
             pthread_mutex_unlock(&pool->mtx_pool);
-            pthread_exit(NULL);
+            thread_exit(pool);
         }
 
         task_t task;
@@ -88,10 +108,12 @@ void *worker(void *arg)
         // 更新队头索引
         pool->q_front = (pool->q_front + 1) % pool->q_capacity;
         pool->q_size--;
+
+        pthread_cond_signal(&pool->cond_full);
         pthread_mutex_unlock(&pool->mtx_pool);
 
         // 更新忙线程数量
-        DEBUG_INFO("[INFO] Thread %ld start working...\n", pthread_self());
+        DEBUG_INFO("[INFO] Thread [%ld] start working...\n", pthread_self());
         pthread_mutex_lock(&pool->mtx_busy);
         pool->busy_num++;
         pthread_mutex_unlock(&pool->mtx_busy);
@@ -100,7 +122,7 @@ void *worker(void *arg)
         free(task.arg);
         task.arg = NULL;
 
-        DEBUG_INFO("[INFO] Thread %ld end working...\n", pthread_self());
+        DEBUG_INFO("[INFO] Thread [%ld] end working...\n", pthread_self());
         pthread_mutex_lock(&pool->mtx_busy);
         pool->busy_num--;
         pthread_mutex_unlock(&pool->mtx_busy);
@@ -187,4 +209,84 @@ err:
         free(pool);
         pool = NULL;
     }
+}
+
+int thread_pool_destory(thread_pool_t *pool)
+{
+    if (pool == NULL)
+    {
+        return -1;
+    }
+
+    int i = 0;
+
+    // 关闭线程池
+    pool->shutdown = 1;
+    // 阻塞回收管理者线程
+    pthread_join(pool->manager_id, NULL);
+    // 唤醒阻塞的消费者线程
+    for (i = 0; i < pool->live_num; i++)
+    {
+        pthread_cond_signal(&pool->cond_empty);
+    }
+
+    // 释放堆内存
+    if (pool->task_queue)
+    {
+        free(pool->task_queue);
+        pool->task_queue = NULL;
+    }
+    if (pool->worker_ids)
+    {
+        free(pool->worker_ids);
+        pool->worker_ids = NULL;
+    }
+
+    pthread_mutex_destroy(&pool->mtx_busy);
+    pthread_mutex_destroy(&pool->mtx_pool);
+    pthread_cond_destroy(&pool->cond_empty);
+    pthread_cond_destroy(&pool->cond_full);
+    free(pool);
+    pool = NULL;
+    return 0;
+}
+
+void thread_pool_add_task(thread_pool_t *pool, void (*func)(void *), void *arg)
+{
+    pthread_mutex_lock(&pool->mtx_pool);
+
+    while (pool->q_size == pool->q_capacity && !pool->shutdown)
+    {
+        pthread_cond_wait(&pool->cond_full, &pool->mtx_pool);
+    }
+
+    if (pool->shutdown)
+    {
+        pthread_mutex_unlock(&pool->mtx_pool);
+        return;
+    }
+
+    pool->task_queue[pool->q_rear].function = func;
+    pool->task_queue[pool->q_rear].arg = arg;
+    pool->q_rear = (pool->q_rear + 1) % pool->q_capacity;
+    pool->q_size++;
+
+    pthread_cond_signal(&pool->cond_empty);
+    pthread_mutex_unlock(&pool->mtx_pool);
+}
+
+int thread_pool_busy_num(thread_pool_t *pool)
+{
+    pthread_mutex_lock(&pool->mtx_busy);
+    int busy_num = pool->busy_num;
+    pthread_mutex_unlock(&pool->mtx_busy);
+    return busy_num;
+}
+
+int thread_pool_alive_num(thread_pool_t *pool)
+{
+    pthread_mutex_lock(&pool->mtx_pool);
+    int live_num = pool->live_num;
+    pthread_mutex_unlock(&pool->mtx_pool);
+    return live_num;
 }

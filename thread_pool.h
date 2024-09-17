@@ -46,12 +46,18 @@ typedef struct thread_pool
 
 } thread_pool_t;
 
+void thread_exit(thread_pool_t *pool);
 void *manager(void *arg);
 void *worker(void *arg);
 // 创建线程池并初始化
 extern thread_pool_t *thread_pool_create(const int n_min, const int n_max, const int q_size);
 // 销毁线程池
+extern int thread_pool_destory(thread_pool_t *pool);
 // 添加任务
+extern void thread_pool_add_task(thread_pool_t *pool, void (*func)(void *), void *arg);
 // 获取正在工作的线程个数
+extern int thread_pool_busy_num(thread_pool_t *pool);
 // 获取存活的线程个数
+extern int thread_pool_alive_num(thread_pool_t *pool);
+
 #endif
