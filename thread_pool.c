@@ -154,12 +154,13 @@ thread_pool_t *thread_pool_create(const int n_min, const int n_max, const int q_
     pool->q_rear = 0;
 
     // 3 初始化线程池相关参数
-    pool->worker_ids = (pthread_t *)malloc(sizeof(pthread_t) * n_min);
+    pool->worker_ids = (pthread_t *)malloc(sizeof(pthread_t) * n_max);
     if (pool->worker_ids == NULL)
     {
         DEBUG_INFO("[ERROR] malloc(): %s\n", strerror(errno));
         goto err;
     }
+    memset(pool->worker_ids, 0, sizeof(pthread_t) * n_max);
     pool->min_num = n_min;
     pool->max_num = n_max;
     pool->busy_num = 0;
